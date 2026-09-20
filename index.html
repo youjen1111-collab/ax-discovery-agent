@@ -695,7 +695,7 @@ function localParse(t){
    - claude.ai 아티팩트로 게시하면 자동 활성 (키 불필요, Claudeception)
    - 로컬 파일에서는 입력창에 /ai 입력 → Anthropic API 키 등록, /ai off 로 해제
    - 실패·미설정 시 기존 키워드·유사도 매칭으로 자동 폴백 */
-const AI={on:/claudeusercontent|claude\.(ai|site)/.test(location.hostname),key:'',sample:null};
+const AI={on:/claudeusercontent|claude\.(ai|site)/.test(location.hostname)||/^https?:$/.test(location.protocol)&&!/localhost|127\.0\.0\.1/.test(location.hostname),key:'',sample:null};
 (async()=>{try{if(window.claude&&claude.use){const sm=await claude.use('sample');if(sm){AI.sample=sm;AI.on=true;}}}catch(e){}})();
 const C2A={};AREAS.forEach(a=>Object.keys(a.pains).forEach(k=>C2A[k]=a.key));
 const AI_CTX=(()=>{const subs=IND.filter(i=>!i.hidden).map(i=>i.sub).join(' | ');
@@ -717,6 +717,7 @@ function holdConcern(g,t){PEND={pain:g.pain||'',text:t};sel.area='';sel.pain='';
 function restorePend(){if(!PEND||!sel.area)return false;if(PEND.pain&&C2A[PEND.pain]===sel.area){sel.pain=PEND.pain;sel.free=''}else{sel.pain='';sel.free=PEND.text}PEND=null;return true}
 function aiToggle(t){if(/off/i.test(t)){AI.on=false;AI.key='';bot('AI 파싱 모드를 껐습니다.','기본 키워드·유사도 매칭으로 동작합니다.');return}
   if(AI.sample||/claudeusercontent|claude\.(ai|site)/.test(location.hostname)){AI.on=true;bot('AI 파싱 모드 ON (아티팩트 환경 — 키 불필요)','자유 입력을 Claude가 해석합니다. 예: "저축은행인데 CRM 입력이 번거롭고요, 리드 우선순위도 감으로 정해요"');return}
+  if(/^https?:$/.test(location.protocol)&&!/localhost|127\.0\.0\.1/.test(location.hostname)){AI.on=true;AI.key='';bot('AI 파싱 모드 ON (서버 프록시)','자유 입력을 Claude가 해석합니다. /ai off 로 해제합니다.');return}
   const k=prompt('Anthropic API 키를 입력하세요 (취소 시 해제)');if(k){AI.key=k.trim();AI.on=true;bot('AI 파싱 모드 ON','자유 입력을 Claude가 해석합니다. /ai off 로 해제합니다. 키는 저장되지 않고 이 화면에서만 사용됩니다.')}else{AI.on=false;bot('AI 파싱 모드를 껐습니다.','')}}
 function aiNorm(res,t){const cs=[];for(const c of (res&&res.concerns)||[]){const txt=(c.text||'').trim();if(!txt)continue;
   let sub=(c.sub&&SUB2MAJ[c.sub])?c.sub:'';let area=(c.area&&AMAP[c.area])?c.area:'';let pain=c.pain||'';
@@ -726,6 +727,9 @@ function aiNorm(res,t){const cs=[];for(const c of (res&&res.concerns)||[]){const
   return cs}
 async function aiParse(t){const p='너는 B2B AI 상담 입력 분류기다. 사용자 입력에서 고민을 문장 단위로 분리하고, 각 고민을 아래 목록에 있는 값만 사용해 분류하라.\n세부산업 목록: '+AI_CTX.subs+'\n업무영역: '+AI_CTX.areas+'\n고민 코드 목록:\n'+AI_CTX.pains+'\n규칙: 산업 언급이 없으면 sub는 null. 의미가 충분히 가까운 고민이 없으면 pain은 null(억지로 고르지 말 것). area는 그 고민의 업무영역 키. intent는 다음 중 하나: "concern"(업무 고민이 하나라도 있음), "starter"(AI 도입·시작을 어떻게 해야 할지 모르는 막연한 질문. 예: AI 도입 어려워요, 뭐부터 해야 하나, 우리도 AI 써야 하나, 직원들이 AI를 잘 몰라요, 챗GPT 회사에서 써도 되나), "smalltalk"(인사·잡담·농담·테스트·날씨·점심, 또는 SK AX 회사 자체에 대한 질문: 매출·주가·가격·직원 수·뭐 하는 회사). starter·smalltalk이면 concerns는 빈 배열. 반드시 JSON만 출력: {"intent":"concern","concerns":[{"text":"고민 문장","sub":null,"area":null,"pain":null}]}\n사용자 입력: """'+t+'"""';
   if(AI.sample){return await AI.sample.json(p,{modelTier:'quick',cache:false})}
+  if(!AI.key){/* v32.2: 배포 환경 — 서버 프록시(/api/parse) 경유, 키는 서버에만 */
+    const r=await fetch('/api/parse',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:p})});
+    if(!r.ok)throw new Error('API '+r.status);return await r.json()}
   const headers={'Content-Type':'application/json'};
   if(AI.key){headers['x-api-key']=AI.key;headers['anthropic-version']='2023-06-01';headers['anthropic-dangerous-direct-browser-access']='true'}
   const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:headers,body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1000,messages:[{role:'user',content:p}]})});
@@ -745,7 +749,7 @@ async function aiSubmit(t){const tp=el('div','msg bot');tp.innerHTML='<div class
     if(!sel.major){holdConcern({pain:c.pain||'',area:c.area||''},c.text);return}
     if(!sel.area){step='area';ask();return}
     step='done';finish()}
-  catch(e){tp.remove();bot('AI 파싱에 실패해 기본 매칭으로 처리합니다.','네트워크·키를 확인해 주세요. (/ai 로 재설정)');localParse(t)}}
+  catch(e){tp.remove();if(AI.key||AI.sample)bot('AI 파싱에 실패해 기본 매칭으로 처리합니다.','네트워크·키를 확인해 주세요. (/ai 로 재설정)');localParse(t)}}
 $('#chatgo').onclick=submit;$('#chat').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();submit()}});
 $('#chat').addEventListener('input',e=>{e.target.style.height='auto';e.target.style.height=Math.min(140,e.target.scrollHeight)+'px'});
 $('#reset').onclick=()=>{PEND=null;MULTI=[];activeM=-1;sel={major:'',sub:'',area:'',pain:'',free:''};step='major';areaAll=false;painAll=0;LOG.innerHTML='';$('#free').value='';ask()};
