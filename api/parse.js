@@ -13,7 +13,7 @@ export default async function handler(req, res) {
   const origin = req.headers.origin || req.headers.referer || '';
   if (origin && host && !origin.includes(host)) { res.status(403).json({ error: 'forbidden' }); return; }
 
-  const key = process.env.ANTHROPIC_API_KEY;
+  const key = process.env.ANTHROPIC_API_KEY || process.env.mykey; // Vercel에 'mykey' 이름으로 등록된 경우도 허용
   if (!key) { res.status(503).json({ error: 'ANTHROPIC_API_KEY not set' }); return; }
 
   let body = req.body;
