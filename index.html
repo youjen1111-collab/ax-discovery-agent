@@ -570,7 +570,11 @@ function undChips(){const c=el('div','chips');const add=(txt,st,ghost)=>{c.appen
  sel.area?add(AMAP[sel.area].label,'area'):add('업무 영역 고르기','area',1);
  (sel.pain||sel.free)?add(sel.pain?painText(sel.pain):(sel.free.length>26?sel.free.slice(0,26)+'…':sel.free),'pain'):add('고민 적기','pain',1);
  const m=el('div','msg bot und');m.append(el('div','lbl','이렇게 이해했어요 — 칩을 눌러 고칠 수 있습니다'));m.append(c);return m}
-function starterConsult(){const s=$('#sheet');s.innerHTML='<h3>전문가 상담</h3><p>AX Starter Pack 기준으로 연락드립니다. 담당 전문가가 Learn · Use · Make 중 맞는 시작점을 함께 잡아드립니다.</p><div style="display:flex;gap:10px;margin-top:18px"><button class="btn" id="fx1" type="button">상담 신청</button><button class="btn ghost" id="fx2" type="button">닫기</button></div>';$('#modal').classList.add('open');s.querySelector('#fx1').onclick=()=>{$('#modal').classList.remove('open');const t=$('#toast');t.textContent='상담 요청이 접수되었습니다 (목업)';t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2200)};s.querySelector('#fx2').onclick=()=>$('#modal').classList.remove('open')}
+function starterConsult(){const s=$('#sheet');s.innerHTML='<h3>전문가 상담</h3><p>AX Starter Pack 기준으로 연락드립니다. 담당 전문가가 Learn · Use · Make 중 맞는 시작점을 함께 잡아드립니다.</p><div class="row"><input id="f1" placeholder="회사명"><input id="f2" placeholder="담당자 성함"></div><div class="row"><input id="f3" placeholder="이메일" type="email"><input id="f4" placeholder="연락처"></div><div style="display:flex;gap:10px;margin-top:18px"><button class="btn" id="fx1" type="button">상담 신청</button><button class="btn ghost" id="fx2" type="button">닫기</button></div>';$('#modal').classList.add('open');
+  s.querySelector('#fx1').onclick=()=>{const v=['f1','f2','f3'].map(i=>s.querySelector('#'+i).value.trim());if(v.some(x=>!x)){toast('회사명, 성함, 이메일을 입력해 주세요.');return}
+    const b=s.querySelector('#fx1');b.disabled=true;b.textContent='전송 중…';
+    sendLead({type:'Starter Pack 상담',company:v[0],name:v[1],email:v[2],phone:s.querySelector('#f4').value,ctx:{...sel,starter:true}}).then(()=>{$('#modal').classList.remove('open');toast('상담 요청이 접수되었습니다. 1영업일 내 연락드립니다.')}).catch(()=>{b.disabled=false;b.textContent='상담 신청';toast('전송에 실패했습니다. 잠시 후 다시 시도해 주세요.')})};
+  s.querySelector('#fx2').onclick=()=>$('#modal').classList.remove('open')}
 function spRow(k,v){return '<div class="sp-row"><b>'+k+'</b><span>'+v+'</span></div>'}
 function spRow2(k,v){return '<div class="sp-row s"><b>'+k+'</b><span>'+v+'</span></div>'}
 function renderStarter(){const R=$('#results');R.innerHTML='';
@@ -1031,20 +1035,34 @@ function render(m){
   const so=new IntersectionObserver(es=>{es.forEach(e=>{if(e.isIntersecting){const i=secs.indexOf(e.target);links.forEach((l,j)=>l.classList.toggle('on',j===i))}})},{rootMargin:'-40% 0px -55% 0px'});secs.forEach(x=>x&&so.observe(x));
 }
 
+
+/* v32.1: 리드 수집 → Supabase (publishable key: 공개용, RLS insert-only) */
+const LEAD_API={url:'https://lutvvctadxuoeeagzshp.supabase.co/rest/v1/leads',key:'sb_publishable_txP9jgtVa_2EOFO7rhS2Eg_S78EuIV7'};
+async function sendLead(o){
+  const c=o.ctx||{};
+  const row={type:o.type||'상담 요청',name:o.name||null,company:o.company||null,email:o.email||null,phone:o.phone||null,memo:o.memo||null,
+    industry:c.major||null,sub_industry:c.sub||null,area:(c.area&&typeof AMAP!=='undefined'&&AMAP[c.area])?AMAP[c.area].label:(c.area||null),
+    pain:(c.pain&&typeof painText==='function')?painText(c.pain):(c.pain||null),free_text:c.free||null,ctx:c,user_agent:navigator.userAgent};
+  window.__leads=(window.__leads||[]);window.__leads.push({...o,at:new Date().toISOString()});
+  const r=await fetch(LEAD_API.url,{method:'POST',headers:{'Content-Type':'application/json','apikey':LEAD_API.key,'Authorization':'Bearer '+LEAD_API.key,'Prefer':'return=minimal'},body:JSON.stringify(row)});
+  if(!r.ok)throw new Error('lead '+r.status);
+  return true}
 function openForm(type){const f=document.getElementById('inform');if(!f)return;
  if(!f.dataset.built){f.dataset.built='1';
   f.innerHTML='<div class="chips fsum">'+[sel.major+(sel.sub?' › '+sel.sub:''),sel.area?AMAP[sel.area].label:'',sel.pain?painText(sel.pain):sel.free].filter(Boolean).map(t=>'<span class="chip">'+esc(t)+'</span>').join('')+'</div><div class="frow"><input id="g1" placeholder="이름"><input id="g2" placeholder="회사"><input id="g3" placeholder="이메일" type="email"></div><div class="fact"><button class="btn" id="gs">상담 요청하기</button></div>';
   f.querySelector('#gs').onclick=()=>{const v=['g1','g2','g3'].map(i=>f.querySelector('#'+i).value.trim());if(v.some(x=>!x)){toast('이름, 회사, 이메일을 입력해 주세요.');return}
-   window.__leads=(window.__leads||[]);window.__leads.push({type:f.dataset.type||type,name:v[0],company:v[1],email:v[2],ctx:{...sel},at:new Date().toISOString()});
-   f.innerHTML='<p class="fdone">접수되었습니다. 1영업일 내 연락드립니다.</p>'};
+   const gs=f.querySelector('#gs');gs.disabled=true;gs.textContent='전송 중…';
+   sendLead({type:f.dataset.type||type,name:v[0],company:v[1],email:v[2],ctx:{...sel}}).then(()=>{f.innerHTML='<p class="fdone">접수되었습니다. 1영업일 내 연락드립니다.</p>'})
+   .catch(()=>{gs.disabled=false;gs.textContent='상담 요청하기';toast('전송에 실패했습니다. 잠시 후 다시 시도해 주세요.')})};
  }
  f.dataset.type=type;f.hidden=false;
  const r=f.getBoundingClientRect();window.scrollTo({top:r.top+window.scrollY-160,behavior:'smooth'})}
 function openFormModal(type){const s=$('#sheet');s.innerHTML='<h3>'+esc(type)+'</h3><p>'+esc((sel.sub||sel.major)+' · '+AMAP[sel.area].label)+' 시나리오 기준으로 연락드립니다.</p><div class="row"><input id="f1" placeholder="회사명"><input id="f2" placeholder="담당자 성함"></div><div class="row"><input id="f3" placeholder="이메일" type="email"><input id="f4" placeholder="연락처"></div><textarea id="f5" placeholder="추가로 알려주실 내용 (선택)"></textarea><div class="act"><button class="btn ghost sm" id="fx">닫기</button><button class="btn sm" id="fs">'+(type==='상담 요청'?'상담 요청하기':'자료 받기')+'</button></div>';
   $('#modal').classList.add('open');s.querySelector('#fx').onclick=closeForm;
   s.querySelector('#fs').onclick=()=>{const v=['f1','f2','f3'].map(i=>s.querySelector('#'+i).value.trim());if(v.some(x=>!x)){toast('회사명, 성함, 이메일을 입력해 주세요.');return}
-    window.__leads=(window.__leads||[]);window.__leads.push({type,company:v[0],name:v[1],email:v[2],phone:s.querySelector('#f4').value,memo:s.querySelector('#f5').value,ctx:{...sel},at:new Date().toISOString()});
-    s.innerHTML='<div class="done"><h3>접수되었습니다</h3><p>'+esc(v[1])+'님, '+(type==='상담 요청'?'담당자가 곧 연락드리겠습니다.':'정리된 자료를 '+esc(v[2])+'로 보내드리겠습니다.')+'</p><div class="act" style="justify-content:center;margin-top:18px"><button class="btn sm" id="fx2">닫기</button></div></div>';s.querySelector('#fx2').onclick=closeForm}}
+    const fs=s.querySelector('#fs');fs.disabled=true;fs.textContent='전송 중…';
+    sendLead({type,company:v[0],name:v[1],email:v[2],phone:s.querySelector('#f4').value,memo:s.querySelector('#f5').value,ctx:{...sel}}).catch(()=>{fs.disabled=false;fs.textContent=(type==='상담 요청'?'상담 요청하기':'자료 받기');toast('전송에 실패했습니다. 잠시 후 다시 시도해 주세요.');throw 0}).then(()=>{
+    s.innerHTML='<div class="done"><h3>접수되었습니다</h3><p>'+esc(v[1])+'님, '+(type==='상담 요청'?'담당자가 곧 연락드리겠습니다.':'정리된 자료를 '+esc(v[2])+'로 보내드리겠습니다.')+'</p><div class="act" style="justify-content:center;margin-top:18px"><button class="btn sm" id="fx2">닫기</button></div></div>';s.querySelector('#fx2').onclick=closeForm}).catch(()=>{})}}
 function closeForm(){$('#modal').classList.remove('open')}
 $('#modal').addEventListener('click',e=>{if(e.target.id==='modal')closeForm()});
 function toast(t){const x=$('#toast');x.textContent=t;x.classList.add('show');setTimeout(()=>x.classList.remove('show'),2200)}
